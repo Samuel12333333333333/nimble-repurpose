@@ -10,26 +10,29 @@ import Footer from '@/components/Footer';
 const Index = () => {
   // Handle smooth scrolling for anchor links
   useEffect(() => {
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-      anchor.addEventListener('click', function (e) {
-        e.preventDefault();
-        
-        const targetId = this.getAttribute('href')?.substring(1);
-        if (!targetId) return;
-        
-        const targetElement = document.getElementById(targetId);
-        if (!targetElement) return;
-        
-        window.scrollTo({
-          top: targetElement.offsetTop - 80, // Offset for the navbar
-          behavior: 'smooth'
-        });
+    const handleAnchorClick = function(e: Event) {
+      e.preventDefault();
+      
+      const target = this as HTMLAnchorElement;
+      const targetId = target.getAttribute('href')?.substring(1);
+      if (!targetId) return;
+      
+      const targetElement = document.getElementById(targetId);
+      if (!targetElement) return;
+      
+      window.scrollTo({
+        top: targetElement.offsetTop - 80, // Offset for the navbar
+        behavior: 'smooth'
       });
+    };
+    
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', handleAnchorClick);
     });
     
     return () => {
       document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.removeEventListener('click', function () {});
+        anchor.removeEventListener('click', handleAnchorClick);
       });
     };
   }, []);

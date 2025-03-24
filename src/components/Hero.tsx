@@ -1,5 +1,6 @@
 
 import React, { useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 
 const Hero: React.FC = () => {
   const videoRef = useRef<HTMLDivElement>(null);
@@ -46,9 +47,9 @@ const Hero: React.FC = () => {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 pt-2">
-              <a href="#early-access" className="primary-btn">
+              <Link to="/login" className="primary-btn">
                 Get Early Access
-              </a>
+              </Link>
               <a href="#how-it-works" className="secondary-btn">
                 See How It Works
               </a>

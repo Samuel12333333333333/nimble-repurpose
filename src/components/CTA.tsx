@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import WaitlistForm from './WaitlistForm';
 
 const CTA: React.FC = () => {
@@ -61,7 +62,7 @@ const CTA: React.FC = () => {
             
             <div className="bg-white rounded-xl p-6 md:p-8 shadow-lg border border-gray-100">
               <h3 className="text-xl font-semibold mb-4">Join the Waitlist</h3>
-              <WaitlistForm />
+              <WaitlistForm redirectUrl="/login" />
             </div>
           </div>
         </div>

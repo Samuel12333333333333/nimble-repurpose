@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Menu, X } from 'lucide-react';
 
@@ -35,12 +36,12 @@ const Navbar: React.FC = () => {
     >
       <div className="container max-w-7xl container-padding">
         <nav className="flex items-center justify-between">
-          <a href="/" className="flex items-center space-x-2">
+          <Link to="/" className="flex items-center space-x-2">
             <div className="relative w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-lg">C</span>
             </div>
             <span className="text-xl font-outfit font-semibold">ContentAI</span>
-          </a>
+          </Link>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
@@ -51,17 +52,17 @@ const Navbar: React.FC = () => {
               <a href="#pricing" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
                 Pricing
               </a>
-              <a href="#" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+              <a href="#how-it-works" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
                 How It Works
               </a>
             </div>
             <div className="flex items-center space-x-3">
-              <a href="#" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
+              <Link to="/login" className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
                 Login
-              </a>
-              <a href="#early-access" className="hero-btn primary-btn text-sm">
-                Get Early Access
-              </a>
+              </Link>
+              <Link to="/login" className="hero-btn primary-btn text-sm">
+                Get Started
+              </Link>
             </div>
           </div>
 
@@ -98,26 +99,26 @@ const Navbar: React.FC = () => {
                 Pricing
               </a>
               <a 
-                href="#" 
+                href="#how-it-works" 
                 className="text-lg font-medium p-2 hover:bg-muted rounded-md transition-colors"
                 onClick={toggleMobileMenu}
               >
                 How It Works
               </a>
-              <a 
-                href="#" 
+              <Link 
+                to="/login" 
                 className="text-lg font-medium p-2 hover:bg-muted rounded-md transition-colors"
                 onClick={toggleMobileMenu}
               >
                 Login
-              </a>
-              <a 
-                href="#early-access" 
+              </Link>
+              <Link 
+                to="/login" 
                 className="primary-btn text-center" 
                 onClick={toggleMobileMenu}
               >
-                Get Early Access
-              </a>
+                Get Started
+              </Link>
             </div>
           </div>
         )}

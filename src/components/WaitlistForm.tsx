@@ -1,8 +1,13 @@
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 
-const WaitlistForm: React.FC = () => {
+interface WaitlistFormProps {
+  redirectUrl?: string;
+}
+
+const WaitlistForm: React.FC<WaitlistFormProps> = ({ redirectUrl }) => {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [socialAccount, setSocialAccount] = useState('');
@@ -10,6 +15,7 @@ const WaitlistForm: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +45,13 @@ const WaitlistForm: React.FC = () => {
         title: "Success!",
         description: "You've been added to our waitlist. We'll be in touch soon!",
       });
+      
+      // If a redirect URL is provided, navigate after a short delay
+      if (redirectUrl) {
+        setTimeout(() => {
+          navigate(redirectUrl);
+        }, 1500);
+      }
     }, 1500);
   };
 
@@ -126,12 +139,18 @@ const WaitlistForm: React.FC = () => {
           <p className="text-muted-foreground mb-4">
             We'll notify you when ContentAI is ready for early access.
           </p>
-          <button
-            onClick={() => setSuccess(false)}
-            className="text-primary font-medium hover:underline"
-          >
-            Add another email
-          </button>
+          {redirectUrl ? (
+            <p className="text-muted-foreground">
+              Redirecting you to preview our platform...
+            </p>
+          ) : (
+            <button
+              onClick={() => setSuccess(false)}
+              className="text-primary font-medium hover:underline"
+            >
+              Add another email
+            </button>
+          )}
         </div>
       )}
     </div>
