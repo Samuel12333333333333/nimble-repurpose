@@ -1,6 +1,6 @@
 
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { Session, User } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -24,14 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
+    // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setSession(session);
@@ -39,6 +32,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     );
+
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
 
     return () => subscription.unsubscribe();
   }, []);
@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       
       if (error) {
+        console.error("Sign in error:", error);
         toast({
           title: "Error signing in",
           description: error.message,
@@ -63,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       navigate('/dashboard');
     } catch (error: any) {
+      console.error("Unexpected error during sign in:", error);
       toast({
         title: "Error",
         description: error.message || "An error occurred during sign in",
@@ -82,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       
       if (error) {
+        console.error("Sign up error:", error);
         toast({
           title: "Error signing up",
           description: error.message,
@@ -95,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         description: "Welcome to ContentAI! Please check your email to verify your account."
       });
     } catch (error: any) {
+      console.error("Unexpected error during sign up:", error);
       toast({
         title: "Error",
         description: error.message || "An error occurred during sign up",
@@ -111,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       navigate('/');
     } catch (error: any) {
+      console.error("Sign out error:", error);
       toast({
         title: "Error",
         description: error.message || "An error occurred during sign out",

@@ -1,8 +1,6 @@
 
-import { createClient } from '@supabase/supabase-js';
+// This file is being replaced by src/integrations/supabase/client.ts
+// Importing from here for backward compatibility only
+import { supabase } from '@/integrations/supabase/client';
 
-// Initialize Supabase client
-const supabaseUrl = 'https://your-supabase-url.supabase.co';
-const supabaseAnonKey = 'your-supabase-anon-key';
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export { supabase };
