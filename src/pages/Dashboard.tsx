@@ -1,21 +1,30 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { Upload, Video, Sparkles, Folder, Settings, Plus, ArrowRight, LogOut, User } from 'lucide-react';
+import { Upload, Video, Sparkles, Folder, Settings, Plus, ArrowRight, LogOut, User, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useProtectedRoute } from '@/hooks/useProtectedRoute';
 import { Card, CardContent } from '@/components/ui/card';
-import { getUserContent } from '@/services/contentService';
-import { Content } from '@/services/contentService';
+import { getUserContent, Content, createContent } from '@/services/contentService';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 const Dashboard: React.FC = () => {
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [userContent, setUserContent] = useState<Content[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [title, setTitle] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [contentType, setContentType] = useState<'video' | 'audio' | 'text'>('video');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [projectName, setProjectName] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  
   const { toast } = useToast();
   const { user, signOut } = useAuth();
   const { isAuthenticated, isLoading: authLoading } = useProtectedRoute();
@@ -43,19 +52,81 @@ const Dashboard: React.FC = () => {
     fetchContent();
   }, [isAuthenticated, toast]);
   
-  const handleUpload = () => {
-    toast({
-      title: "Upload Complete",
-      description: "Your content has been uploaded successfully.",
-    });
-    setIsUploadDialogOpen(false);
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!title || !sourceUrl) {
+      toast({
+        title: "Missing fields",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    try {
+      if (!user) throw new Error("User not authenticated");
+      
+      const contentData = {
+        title,
+        source_url: sourceUrl,
+        content_type: contentType,
+        status: 'processing' as const,
+        user_id: user.id
+      };
+      
+      const result = await createContent(contentData);
+      
+      if (result) {
+        toast({
+          title: "Upload Complete",
+          description: "Your content has been uploaded successfully.",
+        });
+        
+        // Refresh content list
+        const content = await getUserContent();
+        setUserContent(content);
+        
+        // Reset form
+        setTitle('');
+        setSourceUrl('');
+        setContentType('video');
+        setIsUploadDialogOpen(false);
+      } else {
+        throw new Error("Failed to create content");
+      }
+    } catch (error) {
+      console.error('Error uploading content:', error);
+      toast({
+        title: "Error",
+        description: "Failed to upload your content. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const createNewProject = () => {
+    if (!projectName) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide a project name.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     toast({
       title: "New Project Created",
       description: "Your project has been created successfully.",
     });
+    
+    // Reset form
+    setProjectName('');
+    setProjectDescription('');
     setIsCreatingProject(false);
   };
 
@@ -153,7 +224,9 @@ const Dashboard: React.FC = () => {
                 {userContent.map((content) => (
                   <Card key={content.id} className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
                     <div className="bg-secondary aspect-video flex items-center justify-center">
-                      <Video className="h-10 w-10 text-muted-foreground" />
+                      {content.content_type === 'video' && <Video className="h-10 w-10 text-muted-foreground" />}
+                      {content.content_type === 'audio' && <i className="h-10 w-10 text-muted-foreground">🎵</i>}
+                      {content.content_type === 'text' && <i className="h-10 w-10 text-muted-foreground">📝</i>}
                     </div>
                     <CardContent className="p-5">
                       <h3 className="font-medium mb-1">{content.title}</h3>
@@ -161,8 +234,12 @@ const Dashboard: React.FC = () => {
                         {new Date(content.created_at).toLocaleDateString()}
                       </p>
                       <div className="flex justify-between items-center">
-                        <span className="text-xs bg-secondary px-2 py-1 rounded">
-                          {content.outputs.length} outputs
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          content.status === 'completed' ? 'bg-green-100 text-green-800' : 
+                          content.status === 'processing' ? 'bg-blue-100 text-blue-800' : 
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {content.status.charAt(0).toUpperCase() + content.status.slice(1)}
                         </span>
                         <Link to={`/editor?id=${content.id}`} className="text-primary text-sm flex items-center">
                           View <ArrowRight className="ml-1 h-4 w-4" />
@@ -194,26 +271,6 @@ const Dashboard: React.FC = () => {
           
           <TabsContent value="projects" className="space-y-6">
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[...Array(2)].map((_, i) => (
-                <Card key={i} className="border rounded-lg p-5 hover:shadow-md transition-shadow">
-                  <div className="flex items-center mb-4">
-                    <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center mr-3">
-                      <Folder className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="font-medium">Marketing Campaign {i + 1}</h3>
-                      <p className="text-xs text-muted-foreground">5 videos</p>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs bg-secondary px-2 py-1 rounded">Last edited 3 days ago</span>
-                    <button className="text-primary text-sm flex items-center">
-                      Open <ArrowRight className="ml-1 h-4 w-4" />
-                    </button>
-                  </div>
-                </Card>
-              ))}
-              
               <Card 
                 onClick={() => setIsCreatingProject(true)}
                 className="border rounded-lg p-5 hover:shadow-md transition-shadow cursor-pointer flex flex-col items-center justify-center h-[172px]"
@@ -260,23 +317,65 @@ const Dashboard: React.FC = () => {
               Upload your video, podcast, or article to start generating clips.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col items-center justify-center py-10">
-            <div className="mb-6 w-full max-w-sm p-8 border border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors">
-              <Upload className="h-10 w-10 text-muted-foreground mb-4" />
-              <p className="text-center text-sm text-muted-foreground mb-2">
-                Drag and drop your files here, or click to browse
-              </p>
-              <p className="text-center text-xs text-muted-foreground">
-                Supports MP4, MOV, MP3, WAV, PDF, DOCX
-              </p>
+          <form onSubmit={handleUpload} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label htmlFor="title" className="block text-sm font-medium">
+                Title
+              </label>
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Enter content title"
+                required
+              />
             </div>
-            <button 
-              onClick={handleUpload}
-              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+            
+            <div className="space-y-2">
+              <label htmlFor="contentType" className="block text-sm font-medium">
+                Content Type
+              </label>
+              <select
+                id="contentType"
+                value={contentType}
+                onChange={(e) => setContentType(e.target.value as 'video' | 'audio' | 'text')}
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                required
+              >
+                <option value="video">Video</option>
+                <option value="audio">Audio</option>
+                <option value="text">Text</option>
+              </select>
+            </div>
+            
+            <div className="space-y-2">
+              <label htmlFor="sourceUrl" className="block text-sm font-medium">
+                Source URL
+              </label>
+              <Input
+                id="sourceUrl"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                placeholder="Enter source URL (YouTube, Spotify, etc.)"
+                required
+              />
+            </div>
+            
+            <Button 
+              type="submit"
+              className="w-full"
+              disabled={isSubmitting}
             >
-              Upload & Analyze
-            </button>
-          </div>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 
+                  Processing...
+                </>
+              ) : (
+                'Upload & Analyze'
+              )}
+            </Button>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -294,30 +393,34 @@ const Dashboard: React.FC = () => {
               <label htmlFor="project-name" className="text-sm font-medium">
                 Project Name
               </label>
-              <input
+              <Input
                 id="project-name"
                 type="text"
                 placeholder="My Awesome Project"
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                required
               />
             </div>
             <div className="space-y-2">
               <label htmlFor="project-description" className="text-sm font-medium">
                 Description (Optional)
               </label>
-              <textarea
+              <Textarea
                 id="project-description"
                 placeholder="What's this project about?"
                 rows={3}
+                value={projectDescription}
+                onChange={(e) => setProjectDescription(e.target.value)}
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
             </div>
-            <button 
+            <Button 
               onClick={createNewProject}
-              className="w-full px-6 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors mt-2"
+              className="w-full"
             >
               Create Project
-            </button>
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
