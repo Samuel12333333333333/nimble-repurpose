@@ -1,9 +1,10 @@
 
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Eye, EyeOff } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -11,10 +12,11 @@ const Login: React.FC = () => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-  const navigate = useNavigate();
+  const { signIn, signUp } = useAuth();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!email || !password) {
@@ -26,17 +28,15 @@ const Login: React.FC = () => {
       return;
     }
     
-    // Mock login success for demo purposes
-    toast({
-      title: "Login successful",
-      description: "Welcome back to ContentAI!",
-    });
-    
-    // Navigate to dashboard after login
-    navigate('/dashboard');
+    setIsLoading(true);
+    try {
+      await signIn(email, password);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!email || !password || !firstName || !lastName) {
@@ -48,14 +48,26 @@ const Login: React.FC = () => {
       return;
     }
     
-    // Mock registration success for demo purposes
-    toast({
-      title: "Registration successful",
-      description: "Welcome to ContentAI!",
-    });
-    
-    // Navigate to dashboard after registration
-    navigate('/dashboard');
+    setIsLoading(true);
+    try {
+      await signUp(email, password, {
+        first_name: firstName,
+        last_name: lastName,
+        full_name: `${firstName} ${lastName}`
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const switchToRegister = () => {
+    const registerTab = document.querySelector('[data-value="register"]') as HTMLElement;
+    if (registerTab) registerTab.click();
+  };
+
+  const switchToLogin = () => {
+    const loginTab = document.querySelector('[data-value="login"]') as HTMLElement;
+    if (loginTab) loginTab.click();
   };
 
   return (
@@ -98,6 +110,7 @@ const Login: React.FC = () => {
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
                       placeholder="you@example.com"
+                      disabled={isLoading}
                     />
                   </div>
                   
@@ -118,6 +131,7 @@ const Login: React.FC = () => {
                         onChange={(e) => setPassword(e.target.value)}
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
                         placeholder="••••••••"
+                        disabled={isLoading}
                       />
                       <button
                         type="button"
@@ -135,9 +149,20 @@ const Login: React.FC = () => {
                   
                   <button
                     type="submit"
-                    className="w-full py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                    className="w-full py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors flex items-center justify-center"
+                    disabled={isLoading}
                   >
-                    Sign In
+                    {isLoading ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Signing in...
+                      </>
+                    ) : (
+                      'Sign In'
+                    )}
                   </button>
                   
                   <div className="text-center text-sm text-muted-foreground">
@@ -145,7 +170,7 @@ const Login: React.FC = () => {
                     <button
                       type="button"
                       className="text-primary hover:underline"
-                      onClick={() => document.querySelector('[data-value="register"]')?.click()}
+                      onClick={switchToRegister}
                     >
                       Register
                     </button>
@@ -167,6 +192,7 @@ const Login: React.FC = () => {
                         onChange={(e) => setFirstName(e.target.value)}
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
                         placeholder="John"
+                        disabled={isLoading}
                       />
                     </div>
                     <div className="space-y-2">
@@ -180,6 +206,7 @@ const Login: React.FC = () => {
                         onChange={(e) => setLastName(e.target.value)}
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
                         placeholder="Doe"
+                        disabled={isLoading}
                       />
                     </div>
                   </div>
@@ -195,6 +222,7 @@ const Login: React.FC = () => {
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
                       placeholder="you@example.com"
+                      disabled={isLoading}
                     />
                   </div>
                   
@@ -210,6 +238,7 @@ const Login: React.FC = () => {
                         onChange={(e) => setPassword(e.target.value)}
                         className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
                         placeholder="••••••••"
+                        disabled={isLoading}
                       />
                       <button
                         type="button"
@@ -245,9 +274,20 @@ const Login: React.FC = () => {
                   
                   <button
                     type="submit"
-                    className="w-full py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                    className="w-full py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors flex items-center justify-center"
+                    disabled={isLoading}
                   >
-                    Create Account
+                    {isLoading ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Creating Account...
+                      </>
+                    ) : (
+                      'Create Account'
+                    )}
                   </button>
                   
                   <div className="text-center text-sm text-muted-foreground">
@@ -255,7 +295,7 @@ const Login: React.FC = () => {
                     <button
                       type="button"
                       className="text-primary hover:underline"
-                      onClick={() => document.querySelector('[data-value="login"]')?.click()}
+                      onClick={switchToLogin}
                     >
                       Sign in
                     </button>
