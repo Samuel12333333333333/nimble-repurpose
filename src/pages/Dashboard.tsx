@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useProtectedRoute } from '@/hooks/useProtectedRoute';
 import { Card, CardContent } from '@/components/ui/card';
-import { getUserContent, Content, createContent } from '@/services/contentService';
+import { getUserContent, Content, createContent, analyzeContentWithAI } from '@/services/contentService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,10 +20,13 @@ const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [title, setTitle] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
+  const [contentText, setContentText] = useState('');
   const [contentType, setContentType] = useState<'video' | 'audio' | 'text'>('video');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<any>(null);
   
   const { toast } = useToast();
   const { user } = useAuth();
@@ -85,6 +88,29 @@ const Dashboard: React.FC = () => {
           description: "Your content has been uploaded successfully.",
         });
         
+        // If content text was provided, analyze it with AI
+        if (contentText) {
+          setAiAnalysisLoading(true);
+          try {
+            const analysisResult = await analyzeContentWithAI(contentText, contentType);
+            setAiAnalysisResult(analysisResult);
+            
+            toast({
+              title: "AI Analysis Complete",
+              description: "Your content has been analyzed by AI.",
+            });
+          } catch (error) {
+            console.error('AI analysis error:', error);
+            toast({
+              title: "AI Analysis Error",
+              description: "Failed to analyze your content. Please try again.",
+              variant: "destructive",
+            });
+          } finally {
+            setAiAnalysisLoading(false);
+          }
+        }
+        
         // Refresh content list
         const content = await getUserContent();
         setUserContent(content);
@@ -92,6 +118,7 @@ const Dashboard: React.FC = () => {
         // Reset form
         setTitle('');
         setSourceUrl('');
+        setContentText('');
         setContentType('video');
         setIsUploadDialogOpen(false);
       } else {
@@ -334,16 +361,33 @@ const Dashboard: React.FC = () => {
                 required
               />
             </div>
+
+            <div className="space-y-2">
+              <label htmlFor="contentText" className="block text-sm font-medium">
+                Content Text (for AI Analysis)
+              </label>
+              <Textarea
+                id="contentText"
+                value={contentText}
+                onChange={(e) => setContentText(e.target.value)}
+                placeholder="Enter transcript or content text for AI analysis"
+                rows={5}
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional: Paste transcript or content for AI analysis and clip suggestions
+              </p>
+            </div>
             
             <Button 
               type="submit"
               className="w-full"
-              disabled={isSubmitting}
+              disabled={isSubmitting || aiAnalysisLoading}
             >
-              {isSubmitting ? (
+              {isSubmitting || aiAnalysisLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 
-                  Processing...
+                  {aiAnalysisLoading ? "Analyzing with AI..." : "Processing..."}
                 </>
               ) : (
                 'Upload & Analyze'
@@ -398,6 +442,30 @@ const Dashboard: React.FC = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* AI Analysis Dialog */}
+      {aiAnalysisResult && (
+        <Dialog open={!!aiAnalysisResult} onOpenChange={() => setAiAnalysisResult(null)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>AI Content Analysis</DialogTitle>
+              <DialogDescription>
+                Here's what our AI has found in your content.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[500px] overflow-y-auto">
+              <div className="prose prose-sm">
+                {aiAnalysisResult?.candidates?.[0]?.content?.parts?.[0]?.text ? (
+                  <div dangerouslySetInnerHTML={{ __html: aiAnalysisResult.candidates[0].content.parts[0].text.replace(/\n/g, '<br/>') }} />
+                ) : (
+                  <p>No analysis available. Try again with more content.</p>
+                )}
+              </div>
+            </div>
+            <Button onClick={() => setAiAnalysisResult(null)}>Close</Button>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

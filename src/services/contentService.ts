@@ -119,3 +119,20 @@ export async function deleteContent(id: string) {
     return false;
   }
 }
+
+export async function analyzeContentWithAI(content: string, contentType: 'video' | 'audio' | 'text') {
+  try {
+    const response = await supabase.functions.invoke('content-analyze', {
+      body: { content, contentType }
+    });
+
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+
+    return response.data;
+  } catch (error) {
+    console.error('Error analyzing content with AI:', error);
+    throw error;
+  }
+}
