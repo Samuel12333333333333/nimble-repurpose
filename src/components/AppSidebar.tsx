@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -19,6 +19,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
 
 type MenuItem = {
   id: string;
@@ -30,9 +31,59 @@ type MenuItem = {
 
 const AppSidebar: React.FC = () => {
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const location = useLocation();
+  const { signOut, user } = useAuth();
   const { toast } = useToast();
   const [activeMenuItem, setActiveMenuItem] = useState<string | null>(null);
+  const [userData, setUserData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Get current path to highlight active menu item
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.includes('/dashboard')) setActiveMenuItem('dashboard');
+    else if (path.includes('/account')) setActiveMenuItem('profile');
+    else if (path.includes('/billing')) setActiveMenuItem('billing');
+    else if (path.includes('/notifications')) setActiveMenuItem('notifications');
+    else if (path.includes('/security')) setActiveMenuItem('security');
+    else if (path.includes('/settings')) setActiveMenuItem('settings');
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (user) {
+        try {
+          setIsLoading(true);
+          
+          // Fetch user profile data from Supabase or other data source
+          // Replace with your actual user data fetching logic
+          const { data: userData, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+            
+          if (error) {
+            console.error('Error fetching user data:', error);
+            setUserData({
+              email: user.email
+            });
+          } else {
+            setUserData({
+              ...userData,
+              email: user.email
+            });
+          }
+        } catch (error) {
+          console.error('Error:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchUserData();
+  }, [user]);
 
   const menuItems: MenuItem[] = [
     { 
@@ -146,8 +197,13 @@ const AppSidebar: React.FC = () => {
               {item.id !== 'logout' && (
                 <CollapsibleContent>
                   <div className="pl-10 pr-2 py-2 text-sm text-muted-foreground">
-                    <p>Content for {item.label}</p>
-                    {/* Placeholder for menu item content */}
+                    {/* Dynamic content based on menu item */}
+                    {item.id === 'dashboard' && <p>My Dashboard</p>}
+                    {item.id === 'profile' && <p>My Profile</p>}
+                    {item.id === 'billing' && <p>Billing Info</p>}
+                    {item.id === 'notifications' && <p>My Notifications</p>}
+                    {item.id === 'security' && <p>Security Settings</p>}
+                    {item.id === 'settings' && <p>App Settings</p>}
                   </div>
                 </CollapsibleContent>
               )}
@@ -161,8 +217,14 @@ const AppSidebar: React.FC = () => {
         <div className="flex items-center space-x-2">
           <div className="w-8 h-8 bg-secondary rounded-full"></div>
           <div className="flex-1">
-            <p className="text-sm font-medium truncate">User Account</p>
-            <p className="text-xs text-muted-foreground truncate">user@example.com</p>
+            <p className="text-sm font-medium truncate">
+              {isLoading 
+                ? "Loading..." 
+                : userData?.full_name || userData?.name || userData?.email?.split('@')[0] || "User"}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {userData?.email || ""}
+            </p>
           </div>
         </div>
       </div>
