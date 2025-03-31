@@ -62,7 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         description: "Welcome back to ContentAI!"
       });
       
-      navigate('/dashboard');
+      // Changed redirection to account page
+      navigate('/account');
     } catch (error: any) {
       console.error("Unexpected error during sign in:", error);
       toast({
