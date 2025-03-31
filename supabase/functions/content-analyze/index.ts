@@ -35,11 +35,11 @@ serve(async (req) => {
     let systemPrompt = "You are an AI content assistant that analyzes content and provides insights.";
     
     if (contentType === "video") {
-      systemPrompt += " Extract key points, summarize, and suggest viral video clips from this video content.";
+      systemPrompt += " Extract key points, summarize, and suggest 3-5 viral video clips from this video content. For each clip suggestion, provide a title, timestamp (if available), and brief description of what should be included in the clip. Format your response as structured JSON with an array of clip objects.";
     } else if (contentType === "audio") {
-      systemPrompt += " Extract key points, summarize, and suggest viral audio clips from this podcast or audio content.";
+      systemPrompt += " Extract key points, summarize, and suggest 3-5 viral audio clips from this podcast or audio content. For each clip suggestion, provide a title, timestamp (if available), and brief description of what should be included in the clip. Format your response as structured JSON with an array of clip objects.";
     } else if (contentType === "text") {
-      systemPrompt += " Extract key points, summarize, and suggest viral quotes from this article or text content.";
+      systemPrompt += " Extract key points, summarize, and suggest 3-5 viral quotes from this article or text content. For each quote suggestion, provide a title and the exact quote text. Format your response as structured JSON with an array of quote objects.";
     }
 
     const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
@@ -61,11 +61,12 @@ serve(async (req) => {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 1024
+        maxOutputTokens: 1024,
+        responseMimeType: "application/json"
       }
     };
 
-    console.log("Sending request to Gemini API");
+    console.log("Sending request to Gemini API with system prompt:", systemPrompt);
     
     const response = await fetch(`${url}?key=${GEMINI_API_KEY}`, {
       method: "POST",
@@ -84,7 +85,39 @@ serve(async (req) => {
     const data = await response.json();
     console.log("Received response from Gemini API");
 
-    return new Response(JSON.stringify(data), {
+    let processedResponse;
+    try {
+      // Try to find and parse any JSON in the response
+      const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      console.log("Raw response text:", responseText);
+      
+      // Attempt to extract JSON from the text
+      let jsonStr = responseText;
+      
+      // Find JSON-like pattern if it's embedded in text
+      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) || 
+                        responseText.match(/\{[\s\S]*\}/) ||
+                        responseText.match(/\[[\s\S]*\]/);
+      
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0].replace(/```json|```/g, '').trim();
+      }
+      
+      // Parse the JSON
+      processedResponse = {
+        rawAnalysis: responseText,
+        suggestedClips: JSON.parse(jsonStr)
+      };
+    } catch (jsonError) {
+      console.error("Error parsing JSON from response:", jsonError);
+      // Fallback to raw text if JSON parsing fails
+      processedResponse = {
+        rawAnalysis: data?.candidates?.[0]?.content?.parts?.[0]?.text || "",
+        suggestedClips: []
+      };
+    }
+
+    return new Response(JSON.stringify(processedResponse), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

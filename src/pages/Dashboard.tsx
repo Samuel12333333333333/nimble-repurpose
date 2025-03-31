@@ -8,7 +8,16 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useProtectedRoute } from '@/hooks/useProtectedRoute';
 import { Card, CardContent } from '@/components/ui/card';
-import { getUserContent, Content, createContent, analyzeContentWithAI } from '@/services/contentService';
+import { 
+  getUserContent, 
+  Content, 
+  createContent, 
+  analyzeContentWithAI, 
+  updateContent, 
+  createContentOutput,
+  SuggestedClip,
+  AIAnalysisResult
+} from '@/services/contentService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,7 +35,8 @@ const Dashboard: React.FC = () => {
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
-  const [aiAnalysisResult, setAiAnalysisResult] = useState<any>(null);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<AIAnalysisResult | null>(null);
+  const [generatedClips, setGeneratedClips] = useState<SuggestedClip[]>([]);
   
   const { toast } = useToast();
   const { user } = useAuth();
@@ -92,12 +102,41 @@ const Dashboard: React.FC = () => {
         if (contentText) {
           setAiAnalysisLoading(true);
           try {
+            console.log("Starting AI analysis of content...");
             const analysisResult = await analyzeContentWithAI(contentText, contentType);
+            console.log("AI analysis complete:", analysisResult);
+            
             setAiAnalysisResult(analysisResult);
+            
+            // Process and save the suggested clips
+            if (analysisResult.suggestedClips && Array.isArray(analysisResult.suggestedClips)) {
+              setGeneratedClips(analysisResult.suggestedClips);
+              
+              // Mark the content as completed since we have clips
+              await updateContent(result.id, { status: 'completed' });
+
+              // Create content outputs for each clip
+              for (const clip of analysisResult.suggestedClips) {
+                if (clip.title) {
+                  // Create a placeholder URL for now
+                  const outputData = {
+                    content_id: result.id,
+                    output_type: 'tiktok' as const, // Default to TikTok
+                    url: `https://example.com/clips/${result.id}/${encodeURIComponent(clip.title)}`
+                  };
+                  
+                  await createContentOutput(outputData);
+                }
+              }
+              
+              // Refresh content list to show the new clips
+              const updatedContent = await getUserContent();
+              setUserContent(updatedContent);
+            }
             
             toast({
               title: "AI Analysis Complete",
-              description: "Your content has been analyzed by AI.",
+              description: `Generated ${analysisResult.suggestedClips?.length || 0} clip suggestions for your content.`,
             });
           } catch (error) {
             console.error('AI analysis error:', error);
@@ -243,9 +282,14 @@ const Dashboard: React.FC = () => {
                       }`}>
                         {content.status.charAt(0).toUpperCase() + content.status.slice(1)}
                       </span>
-                      <Link to={`/editor?id=${content.id}`} className="text-primary text-sm flex items-center">
-                        View <ArrowRight className="ml-1 h-4 w-4" />
-                      </Link>
+                      <div className="flex items-center">
+                        <span className="text-xs text-muted-foreground mr-2">
+                          {content.outputs?.length || 0} clips
+                        </span>
+                        <Link to={`/editor?id=${content.id}`} className="text-primary text-sm flex items-center">
+                          View <ArrowRight className="ml-1 h-4 w-4" />
+                        </Link>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -258,7 +302,7 @@ const Dashboard: React.FC = () => {
               </div>
               <h3 className="text-lg font-medium mb-2">No content yet</h3>
               <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                Upload your first video, audio, or text content to start generating content.
+                Upload your first video, audio, or text content to start generating clips.
               </p>
               <button 
                 onClick={() => setIsUploadDialogOpen(true)}
@@ -454,15 +498,42 @@ const Dashboard: React.FC = () => {
               </DialogDescription>
             </DialogHeader>
             <div className="max-h-[500px] overflow-y-auto">
+              <h3 className="text-lg font-medium mb-2">Generated Clips</h3>
+              {aiAnalysisResult.suggestedClips && aiAnalysisResult.suggestedClips.length > 0 ? (
+                <div className="space-y-4">
+                  {aiAnalysisResult.suggestedClips.map((clip, index) => (
+                    <div key={index} className="border p-3 rounded-md">
+                      <h4 className="font-medium">{clip.title || `Clip ${index + 1}`}</h4>
+                      {clip.timestamp && <p className="text-xs text-primary">Timestamp: {clip.timestamp}</p>}
+                      <p className="text-sm mt-1">{clip.description}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p>No clip suggestions available. Try again with more content.</p>
+              )}
+              
+              <h3 className="text-lg font-medium mt-4 mb-2">Raw Analysis</h3>
               <div className="prose prose-sm">
-                {aiAnalysisResult?.candidates?.[0]?.content?.parts?.[0]?.text ? (
-                  <div dangerouslySetInnerHTML={{ __html: aiAnalysisResult.candidates[0].content.parts[0].text.replace(/\n/g, '<br/>') }} />
-                ) : (
-                  <p>No analysis available. Try again with more content.</p>
-                )}
+                <div dangerouslySetInnerHTML={{ 
+                  __html: aiAnalysisResult.rawAnalysis.replace(/\n/g, '<br/>') 
+                }} />
               </div>
             </div>
-            <Button onClick={() => setAiAnalysisResult(null)}>Close</Button>
+            <div className="flex justify-between mt-4">
+              <Button variant="outline" onClick={() => setAiAnalysisResult(null)}>
+                Close
+              </Button>
+              <Button onClick={() => {
+                setAiAnalysisResult(null);
+                toast({
+                  title: "Clips Generated",
+                  description: "Your clips have been saved and are ready to be edited.",
+                });
+              }}>
+                Continue to Editor
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       )}
