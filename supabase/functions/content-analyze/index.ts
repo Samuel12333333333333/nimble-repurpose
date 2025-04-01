@@ -135,6 +135,88 @@ class RunwayService {
     });
   }
   
+  async generateVideo(scriptText: string, options: {
+    platform: string;
+    aspectRatio: string;
+    effects: string[];
+    voiceStyle?: string;
+    musicStyle?: string;
+    subtitlesEnabled?: boolean;
+    avatarEnabled?: boolean;
+  }): Promise<any> {
+    // Wait for connection and authentication before proceeding
+    await this.connectionPromise;
+
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isConnected) {
+      this.connectionPromise = this.connect();
+      await this.connectionPromise;
+    }
+
+    const taskUUID = crypto.randomUUID();
+    
+    let width = 1080;
+    let height = 1920; // Default vertical 9:16
+
+    if (options.aspectRatio === "1:1") {
+      width = 1080;
+      height = 1080;
+    } else if (options.aspectRatio === "16:9") {
+      width = 1920;
+      height = 1080;
+    }
+
+    return new Promise((resolve, reject) => {
+      // For now, we'll create a simulation response since the actual Runway API may not directly
+      // support this specific video generation with all these options
+      
+      const message = [{
+        taskType: "videoGeneration",
+        taskUUID,
+        script: scriptText,
+        width,
+        height,
+        effectOptions: {
+          subtitles: options.subtitlesEnabled || false,
+          avatars: options.avatarEnabled || false,
+          voiceStyle: options.voiceStyle || "default",
+          musicStyle: options.musicStyle || "default",
+          effects: options.effects || []
+        }
+      }];
+
+      console.log("Sending video generation request:", message);
+
+      // Simulate response until full API integration is complete
+      setTimeout(() => {
+        const simulatedResponse = {
+          videoUrl: "https://example.com/generated-video.mp4",
+          previewUrl: "https://example.com/video-preview.jpg",
+          generationId: taskUUID,
+          platform: options.platform,
+          aspectRatio: options.aspectRatio,
+          effects: options.effects
+        };
+        resolve(simulatedResponse);
+      }, 2000);
+
+      // Comment out the actual send until API supports these features
+      // this.ws.send(JSON.stringify(message));
+      
+      // This would be the actual implementation once the API supports these features
+      /*
+      this.messageCallbacks.set(taskUUID, (data) => {
+        if (data.error) {
+          reject(new Error(data.errorMessage));
+        } else {
+          resolve(data);
+        }
+      });
+      
+      this.ws.send(JSON.stringify(message));
+      */
+    });
+  }
+  
   // Mock implementation for text content
   async analyzeTextContent(text: string): Promise<any> {
     // For text content, we'll create a simulated response
@@ -181,8 +263,21 @@ serve(async (req) => {
     }
 
     const requestData = await req.json();
-    const { content, contentType, sourceUrl } = requestData;
+    const { content, contentType, sourceUrl, scriptText, videoOptions } = requestData;
 
+    // Handle video generation request
+    if (scriptText && videoOptions) {
+      console.log(`Generating video from script with Runway API`);
+      
+      const runwayService = new RunwayService(RUNWAY_API_KEY);
+      const generationResult = await runwayService.generateVideo(scriptText, videoOptions);
+      
+      return new Response(JSON.stringify(generationResult), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Handle content analysis request
     if (!content && !sourceUrl) {
       return new Response(
         JSON.stringify({ error: "Content or source URL is required" }),

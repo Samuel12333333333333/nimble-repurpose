@@ -1,4 +1,3 @@
-
 import { supabase } from '@/integrations/supabase/client';
 
 export type Content = {
@@ -16,13 +15,15 @@ export type Content = {
 export type ContentOutput = {
   id: string;
   content_id: string;
-  output_type: 'tiktok' | 'instagram' | 'twitter' | 'newsletter';
+  output_type: 'tiktok' | 'instagram' | 'twitter' | 'newsletter' | 'youtube' | 'facebook';
   url: string;
   created_at: string;
   title?: string;
   description?: string;
   timestamp?: string;
   duration?: number;
+  aspect_ratio?: string;
+  effects?: string[];
 };
 
 export type SuggestedClip = {
@@ -35,6 +36,25 @@ export type SuggestedClip = {
 export type AIAnalysisResult = {
   rawAnalysis: string;
   suggestedClips: SuggestedClip[];
+};
+
+export type VideoGenerationOptions = {
+  platform: 'instagram' | 'tiktok' | 'youtube' | 'facebook';
+  aspectRatio: '9:16' | '1:1' | '16:9';
+  effects: string[];
+  voiceStyle?: string;
+  musicStyle?: string;
+  subtitlesEnabled?: boolean;
+  avatarEnabled?: boolean;
+};
+
+export type VideoGenerationResult = {
+  videoUrl: string;
+  previewUrl: string;
+  generationId: string;
+  platform: string;
+  aspectRatio: string;
+  effects: string[];
 };
 
 export async function getUserContent() {
@@ -180,6 +200,37 @@ export async function analyzeContentWithAI(content: string, contentType: 'video'
     return response.data as AIAnalysisResult;
   } catch (error) {
     console.error('Error analyzing content with AI:', error);
+    throw error;
+  }
+}
+
+export async function generateVideoFromScript(
+  scriptText: string,
+  videoOptions: VideoGenerationOptions
+): Promise<VideoGenerationResult> {
+  try {
+    console.log(`Generating video from script with options:`, videoOptions);
+    
+    const response = await supabase.functions.invoke('content-analyze', {
+      body: { scriptText, videoOptions }
+    });
+
+    if (response.error) {
+      console.error('Video generation error from Supabase function:', response.error);
+      throw new Error(response.error.message);
+    }
+
+    console.log('Video generation response:', response.data);
+    
+    // Handle the case where response.data might not have the expected structure
+    if (!response.data || typeof response.data !== 'object') {
+      console.error('Invalid response format from video generation:', response.data);
+      throw new Error('Invalid response format from video generation');
+    }
+
+    return response.data as VideoGenerationResult;
+  } catch (error) {
+    console.error('Error generating video:', error);
     throw error;
   }
 }
