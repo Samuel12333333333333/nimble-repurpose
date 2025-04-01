@@ -178,7 +178,7 @@ export async function generateVideoFromScript(
 
     if (response.error) {
       console.error('Video generation error from Supabase function:', response.error);
-      throw new Error(response.error.message);
+      throw new Error(response.error.message || "Failed to generate video");
     }
 
     console.log('Video generation response:', response.data);

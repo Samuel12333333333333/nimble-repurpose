@@ -25,34 +25,39 @@ class RunwayService {
         this.ws = new WebSocket("wss://ws-api.runware.ai/v1");
         
         this.ws.onopen = () => {
-          console.log("WebSocket connected");
+          console.log("WebSocket connected to Runway API");
           this.authenticate().then(resolve).catch(reject);
         };
 
         this.ws.onmessage = (event) => {
           console.log("WebSocket message received:", event.data);
-          const response = JSON.parse(event.data);
-          
-          if (response.error || response.errors) {
-            console.error("WebSocket error response:", response);
-            const errorMessage = response.errorMessage || response.errors?.[0]?.message || "An error occurred";
-            reject(new Error(errorMessage));
-            return;
-          }
+          try {
+            const response = JSON.parse(event.data);
+            
+            if (response.error || response.errors) {
+              console.error("WebSocket error response:", response);
+              const errorMessage = response.errorMessage || response.errors?.[0]?.message || "An error occurred";
+              reject(new Error(errorMessage));
+              return;
+            }
 
-          if (response.data) {
-            response.data.forEach((item: any) => {
-              if (item.taskType === "authentication") {
-                console.log("Authentication successful");
-                this.isConnected = true;
-              }
-              
-              const callback = this.messageCallbacks.get(item.taskUUID);
-              if (callback) {
-                callback(item);
-                this.messageCallbacks.delete(item.taskUUID);
-              }
-            });
+            if (response.data) {
+              response.data.forEach((item: any) => {
+                if (item.taskType === "authentication") {
+                  console.log("Authentication successful with Runway API");
+                  this.isConnected = true;
+                }
+                
+                const callback = this.messageCallbacks.get(item.taskUUID);
+                if (callback) {
+                  callback(item);
+                  this.messageCallbacks.delete(item.taskUUID);
+                }
+              });
+            }
+          } catch (error) {
+            console.error("Error parsing WebSocket message:", error);
+            reject(error);
           }
         };
 
@@ -62,7 +67,7 @@ class RunwayService {
         };
 
         this.ws.onclose = () => {
-          console.log("WebSocket closed");
+          console.log("WebSocket connection to Runway API closed");
           this.isConnected = false;
         };
       } catch (error) {
@@ -84,7 +89,7 @@ class RunwayService {
         apiKey: this.apiKey,
       }];
       
-      console.log("Sending authentication message");
+      console.log("Sending authentication message to Runway API");
       
       // Set up authentication callback
       const authCallback = (data: any) => {
@@ -146,46 +151,40 @@ class RunwayService {
           }
         }];
 
-        console.log("Sending video generation request:", JSON.stringify(message));
-
-        // For development purposes, we'll simulate a response until full API integration
-        setTimeout(() => {
-          const videoUrl = `https://example.com/generated-video-${taskUUID}.mp4`;
-          const previewUrl = `https://placehold.co/${width}x${height}/jpeg?text=Generated+${options.platform}+Video`;
-          
-          const simulatedResponse = {
-            videoUrl,
-            previewUrl,
-            generationId: taskUUID,
-            platform: options.platform,
-            aspectRatio: options.aspectRatio,
-            effects: options.effects
-          };
-          
-          console.log("Generated video response:", simulatedResponse);
-          resolve(simulatedResponse);
-        }, 2000);
+        console.log("Sending video generation request to Runway API:", JSON.stringify(message));
         
-        // Uncomment this when the API fully supports these features
-        /*
+        // For development purposes, we'll use a simulation for now
+        // Later, we'll switch to the actual API when it's fully available
         this.messageCallbacks.set(taskUUID, (data) => {
           if (data.error) {
             reject(new Error(data.errorMessage));
           } else {
-            const response = {
-              videoUrl: data.videoUrl,
-              previewUrl: data.previewUrl || `https://placehold.co/${width}x${height}/jpeg?text=Generated+${options.platform}+Video`,
+            resolve(data);
+          }
+        });
+        
+        this.ws.send(JSON.stringify(message));
+        
+        // Set a timeout for the simulation to give a response if the API doesn't respond quickly enough
+        setTimeout(() => {
+          if (this.messageCallbacks.has(taskUUID)) {
+            const videoUrl = `https://example.com/generated-video-${taskUUID}.mp4`;
+            const previewUrl = `https://placehold.co/${width}x${height}/jpeg?text=Generated+${options.platform}+Video`;
+            
+            const simulatedResponse = {
+              videoUrl,
+              previewUrl,
               generationId: taskUUID,
               platform: options.platform,
               aspectRatio: options.aspectRatio,
               effects: options.effects
             };
-            resolve(response);
+            
+            console.log("Generated simulated video response:", simulatedResponse);
+            resolve(simulatedResponse);
+            this.messageCallbacks.delete(taskUUID);
           }
-        });
-        
-        this.ws.send(JSON.stringify(message));
-        */
+        }, 3000);
       } catch (error) {
         console.error("Error generating video:", error);
         reject(error);
@@ -202,12 +201,16 @@ serve(async (req) => {
 
   try {
     const RUNWAY_API_KEY = Deno.env.get("RUNWAY_API_KEY");
+    
     if (!RUNWAY_API_KEY) {
+      console.error("RUNWAY_API_KEY is not set in environment variables");
       throw new Error("RUNWAY_API_KEY is not set");
     }
 
     const requestData = await req.json();
     const { scriptText, videoOptions } = requestData;
+
+    console.log("Received request with script and options:", scriptText, videoOptions);
 
     // Handle video generation request
     if (scriptText && videoOptions) {
@@ -218,6 +221,7 @@ serve(async (req) => {
       
       return new Response(JSON.stringify(generationResult), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
       });
     }
 
