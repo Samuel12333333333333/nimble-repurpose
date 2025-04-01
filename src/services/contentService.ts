@@ -1,3 +1,4 @@
+
 import { supabase } from '@/integrations/supabase/client';
 
 export type Content = {
@@ -24,18 +25,6 @@ export type ContentOutput = {
   duration?: number;
   aspect_ratio?: string;
   effects?: string[];
-};
-
-export type SuggestedClip = {
-  title: string;
-  timestamp?: string;
-  description: string;
-  duration?: number;
-};
-
-export type AIAnalysisResult = {
-  rawAnalysis: string;
-  suggestedClips: SuggestedClip[];
 };
 
 export type VideoGenerationOptions = {
@@ -176,34 +165,6 @@ export async function deleteContent(id: string) {
   }
 }
 
-export async function analyzeContentWithAI(content: string, contentType: 'video' | 'audio' | 'text', sourceUrl?: string): Promise<AIAnalysisResult> {
-  try {
-    console.log(`Analyzing ${contentType} content with AI:`, content ? content.substring(0, 100) + '...' : 'Using source URL');
-    
-    const response = await supabase.functions.invoke('content-analyze', {
-      body: { content, contentType, sourceUrl }
-    });
-
-    if (response.error) {
-      console.error('AI analysis error from Supabase function:', response.error);
-      throw new Error(response.error.message);
-    }
-
-    console.log('AI analysis response:', response.data);
-    
-    // Handle the case where response.data might not have the expected structure
-    if (!response.data || typeof response.data !== 'object') {
-      console.error('Invalid response format from AI analysis:', response.data);
-      throw new Error('Invalid response format from AI analysis');
-    }
-
-    return response.data as AIAnalysisResult;
-  } catch (error) {
-    console.error('Error analyzing content with AI:', error);
-    throw error;
-  }
-}
-
 export async function generateVideoFromScript(
   scriptText: string,
   videoOptions: VideoGenerationOptions
@@ -222,7 +183,6 @@ export async function generateVideoFromScript(
 
     console.log('Video generation response:', response.data);
     
-    // Handle the case where response.data might not have the expected structure
     if (!response.data || typeof response.data !== 'object') {
       console.error('Invalid response format from video generation:', response.data);
       throw new Error('Invalid response format from video generation');

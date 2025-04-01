@@ -45,12 +45,12 @@ class RunwayService {
               if (item.taskType === "authentication") {
                 console.log("Authentication successful");
                 this.isConnected = true;
-              } else {
-                const callback = this.messageCallbacks.get(item.taskUUID);
-                if (callback) {
-                  callback(item);
-                  this.messageCallbacks.delete(item.taskUUID);
-                }
+              }
+              
+              const callback = this.messageCallbacks.get(item.taskUUID);
+              if (callback) {
+                callback(item);
+                this.messageCallbacks.delete(item.taskUUID);
               }
             });
           }
@@ -87,54 +87,17 @@ class RunwayService {
       console.log("Sending authentication message");
       
       // Set up authentication callback
-      const authCallback = (event: MessageEvent) => {
-        const response = JSON.parse(event.data);
-        if (response.data?.[0]?.taskType === "authentication") {
-          this.ws?.removeEventListener("message", authCallback);
+      const authCallback = (data: any) => {
+        if (data.taskType === "authentication") {
           resolve();
         }
       };
       
-      this.ws.addEventListener("message", authCallback);
+      this.messageCallbacks.set("authentication", authCallback);
       this.ws.send(JSON.stringify(authMessage));
     });
   }
 
-  async generateVideoAnalysis(videoUrl: string): Promise<any> {
-    // Wait for connection and authentication before proceeding
-    await this.connectionPromise;
-
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isConnected) {
-      this.connectionPromise = this.connect();
-      await this.connectionPromise;
-    }
-
-    const taskUUID = crypto.randomUUID();
-    
-    return new Promise((resolve, reject) => {
-      const message = [{
-        taskType: "videoAnalysis",
-        taskUUID,
-        videoUrl: videoUrl,
-        analysisDepth: "detailed",
-        clipSuggestions: true,
-        numberOfClips: 5,
-      }];
-
-      console.log("Sending video analysis request:", message);
-
-      this.messageCallbacks.set(taskUUID, (data) => {
-        if (data.error) {
-          reject(new Error(data.errorMessage));
-        } else {
-          resolve(data);
-        }
-      });
-
-      this.ws.send(JSON.stringify(message));
-    });
-  }
-  
   async generateVideo(scriptText: string, options: {
     platform: string;
     aspectRatio: string;
@@ -166,87 +129,68 @@ class RunwayService {
     }
 
     return new Promise((resolve, reject) => {
-      // For now, we'll create a simulation response since the actual Runway API may not directly
-      // support this specific video generation with all these options
-      
-      const message = [{
-        taskType: "videoGeneration",
-        taskUUID,
-        script: scriptText,
-        width,
-        height,
-        effectOptions: {
-          subtitles: options.subtitlesEnabled || false,
-          avatars: options.avatarEnabled || false,
-          voiceStyle: options.voiceStyle || "default",
-          musicStyle: options.musicStyle || "default",
-          effects: options.effects || []
-        }
-      }];
-
-      console.log("Sending video generation request:", message);
-
-      // Simulate response until full API integration is complete
-      setTimeout(() => {
-        const simulatedResponse = {
-          videoUrl: "https://example.com/generated-video.mp4",
-          previewUrl: "https://example.com/video-preview.jpg",
-          generationId: taskUUID,
+      try {
+        const message = [{
+          taskType: "videoGeneration",
+          taskUUID,
+          script: scriptText,
+          width,
+          height,
           platform: options.platform,
-          aspectRatio: options.aspectRatio,
-          effects: options.effects
-        };
-        resolve(simulatedResponse);
-      }, 2000);
+          effectOptions: {
+            subtitles: options.subtitlesEnabled || false,
+            avatars: options.avatarEnabled || false,
+            voiceStyle: options.voiceStyle || "default",
+            musicStyle: options.musicStyle || "default",
+            effects: options.effects || []
+          }
+        }];
 
-      // Comment out the actual send until API supports these features
-      // this.ws.send(JSON.stringify(message));
-      
-      // This would be the actual implementation once the API supports these features
-      /*
-      this.messageCallbacks.set(taskUUID, (data) => {
-        if (data.error) {
-          reject(new Error(data.errorMessage));
-        } else {
-          resolve(data);
-        }
-      });
-      
-      this.ws.send(JSON.stringify(message));
-      */
-    });
-  }
-  
-  // Mock implementation for text content
-  async analyzeTextContent(text: string): Promise<any> {
-    // For text content, we'll create a simulated response
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const suggestedClips = [
-      {
-        title: "Key Insight #1",
-        description: "Important point from the beginning of the text",
-        timestamp: "00:00",
-        duration: 15
-      },
-      {
-        title: "Primary Argument",
-        description: "The central argument of the content",
-        timestamp: "00:15",
-        duration: 20
-      },
-      {
-        title: "Supporting Example",
-        description: "An example that reinforces the main point",
-        timestamp: "00:35",
-        duration: 15
+        console.log("Sending video generation request:", JSON.stringify(message));
+
+        // For development purposes, we'll simulate a response until full API integration
+        setTimeout(() => {
+          const videoUrl = `https://example.com/generated-video-${taskUUID}.mp4`;
+          const previewUrl = `https://placehold.co/${width}x${height}/jpeg?text=Generated+${options.platform}+Video`;
+          
+          const simulatedResponse = {
+            videoUrl,
+            previewUrl,
+            generationId: taskUUID,
+            platform: options.platform,
+            aspectRatio: options.aspectRatio,
+            effects: options.effects
+          };
+          
+          console.log("Generated video response:", simulatedResponse);
+          resolve(simulatedResponse);
+        }, 2000);
+        
+        // Uncomment this when the API fully supports these features
+        /*
+        this.messageCallbacks.set(taskUUID, (data) => {
+          if (data.error) {
+            reject(new Error(data.errorMessage));
+          } else {
+            const response = {
+              videoUrl: data.videoUrl,
+              previewUrl: data.previewUrl || `https://placehold.co/${width}x${height}/jpeg?text=Generated+${options.platform}+Video`,
+              generationId: taskUUID,
+              platform: options.platform,
+              aspectRatio: options.aspectRatio,
+              effects: options.effects
+            };
+            resolve(response);
+          }
+        });
+        
+        this.ws.send(JSON.stringify(message));
+        */
+      } catch (error) {
+        console.error("Error generating video:", error);
+        reject(error);
       }
-    ];
-    
-    return {
-      suggestedClips,
-      rawAnalysis: `Analysis of text: ${text.substring(0, 100)}...`
-    };
+    });
   }
 }
 
@@ -263,7 +207,7 @@ serve(async (req) => {
     }
 
     const requestData = await req.json();
-    const { content, contentType, sourceUrl, scriptText, videoOptions } = requestData;
+    const { scriptText, videoOptions } = requestData;
 
     // Handle video generation request
     if (scriptText && videoOptions) {
@@ -277,40 +221,13 @@ serve(async (req) => {
       });
     }
 
-    // Handle content analysis request
-    if (!content && !sourceUrl) {
-      return new Response(
-        JSON.stringify({ error: "Content or source URL is required" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    console.log(`Processing ${contentType} content with Runway API`);
-    
-    const runwayService = new RunwayService(RUNWAY_API_KEY);
-    let analysisResult;
-    
-    if (contentType === "video") {
-      analysisResult = await runwayService.generateVideoAnalysis(sourceUrl || content);
-    } else if (contentType === "text") {
-      analysisResult = await runwayService.analyzeTextContent(content);
-    } else {
-      // For now, handle audio similar to text
-      analysisResult = await runwayService.analyzeTextContent(content);
-    }
-    
-    // Process and format the response
-    const processedResponse = {
-      rawAnalysis: analysisResult.rawAnalysis || "Analysis complete",
-      suggestedClips: analysisResult.suggestedClips || []
-    };
-
-    return new Response(JSON.stringify(processedResponse), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: "Invalid request. Required parameters missing." }),
+      {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
     console.error("Error processing request:", error.message);
     return new Response(

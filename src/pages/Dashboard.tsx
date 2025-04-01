@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { Upload, Video, Sparkles, Folder, Plus, ArrowRight, Loader2 } from 'lucide-react';
+import { Upload, Video, Sparkles, Plus, ArrowRight, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
@@ -12,31 +12,27 @@ import {
   getUserContent, 
   Content, 
   createContent, 
-  analyzeContentWithAI, 
-  updateContent, 
   createContentOutput,
-  SuggestedClip,
-  AIAnalysisResult
+  generateVideoFromScript,
+  VideoGenerationResult
 } from '@/services/contentService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
 const Dashboard: React.FC = () => {
-  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [userContent, setUserContent] = useState<Content[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Video creation state
   const [title, setTitle] = useState('');
-  const [sourceUrl, setSourceUrl] = useState('');
-  const [contentText, setContentText] = useState('');
-  const [contentType, setContentType] = useState<'video' | 'audio' | 'text'>('video');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [projectName, setProjectName] = useState('');
-  const [projectDescription, setProjectDescription] = useState('');
-  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
-  const [aiAnalysisResult, setAiAnalysisResult] = useState<AIAnalysisResult | null>(null);
-  const [generatedClips, setGeneratedClips] = useState<SuggestedClip[]>([]);
+  const [scriptText, setScriptText] = useState('');
+  const [platform, setPlatform] = useState<'instagram' | 'tiktok' | 'youtube' | 'facebook'>('instagram');
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>('9:16');
+  const [selectedEffects, setSelectedEffects] = useState<string[]>(['subtitles']);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedVideo, setGeneratedVideo] = useState<VideoGenerationResult | null>(null);
   
   const { toast } = useToast();
   const { user } = useAuth();
@@ -65,10 +61,10 @@ const Dashboard: React.FC = () => {
     fetchContent();
   }, [isAuthenticated, toast]);
   
-  const handleUpload = async (e: React.FormEvent) => {
+  const handleCreateVideo = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!title || !sourceUrl) {
+    if (!title || !scriptText) {
       toast({
         title: "Missing fields",
         description: "Please fill in all required fields.",
@@ -77,142 +73,96 @@ const Dashboard: React.FC = () => {
       return;
     }
     
-    setIsSubmitting(true);
+    setIsGenerating(true);
     
     try {
       if (!user) throw new Error("User not authenticated");
       
+      // First create the content record
       const contentData = {
         title,
-        source_url: sourceUrl,
-        content_type: contentType,
+        source_url: '',
+        content_type: 'video' as const,
         status: 'processing' as const,
         user_id: user.id
       };
       
-      const result = await createContent(contentData);
+      const contentResult = await createContent(contentData);
       
-      if (result) {
-        toast({
-          title: "Upload Complete",
-          description: "Your content has been uploaded successfully.",
-        });
-        
-        // Start AI analysis with source URL for videos
-        setAiAnalysisLoading(true);
-        try {
-          console.log("Starting AI analysis of content...");
-          
-          // Pass sourceUrl for video content analysis
-          const analysisResult = await analyzeContentWithAI(
-            contentText, 
-            contentType, 
-            contentType === 'video' ? sourceUrl : undefined
-          );
-          
-          console.log("AI analysis complete:", analysisResult);
-          
-          setAiAnalysisResult(analysisResult);
-          
-          // Process and save the suggested clips
-          if (analysisResult.suggestedClips && Array.isArray(analysisResult.suggestedClips)) {
-            setGeneratedClips(analysisResult.suggestedClips);
-            
-            // Mark the content as completed since we have clips
-            await updateContent(result.id, { status: 'completed' });
-
-            // Create content outputs for each clip
-            for (const clip of analysisResult.suggestedClips) {
-              if (clip.title) {
-                const outputData = {
-                  content_id: result.id,
-                  output_type: 'tiktok' as const,
-                  url: `https://example.com/clips/${result.id}/${encodeURIComponent(clip.title)}`,
-                  title: clip.title,
-                  description: clip.description,
-                  timestamp: clip.timestamp,
-                  duration: clip.duration
-                };
-                
-                await createContentOutput(outputData);
-              }
-            }
-            
-            // Refresh content list to show the new clips
-            const updatedContent = await getUserContent();
-            setUserContent(updatedContent);
-          } else {
-            // Update status to failed if no clips were generated
-            await updateContent(result.id, { status: 'failed' });
-            throw new Error("No clips could be generated");
-          }
-          
-          toast({
-            title: "AI Analysis Complete",
-            description: `Generated ${analysisResult.suggestedClips?.length || 0} clip suggestions for your content.`,
-          });
-        } catch (error) {
-          console.error('AI analysis error:', error);
-          await updateContent(result.id, { status: 'failed' });
-          
-          toast({
-            title: "AI Analysis Error",
-            description: "Failed to analyze your content. Please try again.",
-            variant: "destructive",
-          });
-        } finally {
-          setAiAnalysisLoading(false);
-        }
-        
-        // Refresh content list
-        const content = await getUserContent();
-        setUserContent(content);
-        
-        // Reset form
-        setTitle('');
-        setSourceUrl('');
-        setContentText('');
-        setContentType('video');
-        setIsUploadDialogOpen(false);
-      } else {
-        throw new Error("Failed to create content");
+      if (!contentResult) {
+        throw new Error("Failed to create content record");
       }
+      
+      // Generate the video
+      const videoOptions = {
+        platform,
+        aspectRatio,
+        effects: selectedEffects,
+        subtitlesEnabled: selectedEffects.includes('subtitles'),
+        avatarEnabled: selectedEffects.includes('avatar')
+      };
+      
+      const videoResult = await generateVideoFromScript(scriptText, videoOptions);
+      setGeneratedVideo(videoResult);
+      
+      // Create a content output record
+      const outputData = {
+        content_id: contentResult.id,
+        output_type: platform,
+        url: videoResult.videoUrl,
+        title: title,
+        aspect_ratio: videoResult.aspectRatio,
+        effects: videoResult.effects
+      };
+      
+      await createContentOutput(outputData);
+      
+      // Update content status to completed
+      await fetch(`/api/content/${contentResult.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' })
+      });
+      
+      // Refresh the content list
+      const updatedContent = await getUserContent();
+      setUserContent(updatedContent);
+      
+      toast({
+        title: "Video Created",
+        description: "Your video has been created successfully.",
+      });
+      
+      // Reset form
+      setTitle('');
+      setScriptText('');
+      setPlatform('instagram');
+      setAspectRatio('9:16');
+      setSelectedEffects(['subtitles']);
+      setIsCreateDialogOpen(false);
     } catch (error) {
-      console.error('Error uploading content:', error);
+      console.error('Error creating video:', error);
       toast({
         title: "Error",
-        description: "Failed to upload your content. Please try again.",
+        description: "Failed to create your video. Please try again.",
         variant: "destructive",
       });
     } finally {
-      setIsSubmitting(false);
+      setIsGenerating(false);
     }
   };
 
-  const createNewProject = () => {
-    if (!projectName) {
-      toast({
-        title: "Missing Information",
-        description: "Please provide a project name.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    toast({
-      title: "New Project Created",
-      description: "Your project has been created successfully.",
-    });
-    
-    // Reset form
-    setProjectName('');
-    setProjectDescription('');
-    setIsCreatingProject(false);
+  const handleEffectToggle = (effect: string) => {
+    setSelectedEffects(prev => 
+      prev.includes(effect)
+        ? prev.filter(e => e !== effect)
+        : [...prev, effect]
+    );
   };
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center h-screen">
         <div className="animate-pulse flex flex-col items-center">
           <div className="w-12 h-12 bg-primary/10 rounded-full mb-4"></div>
           <div className="h-4 w-48 bg-secondary rounded"></div>
@@ -229,35 +179,25 @@ const Dashboard: React.FC = () => {
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-semibold mb-1">Welcome, {user?.email?.split('@')[0] || 'User'}</h1>
-          <p className="text-muted-foreground">Manage your content and projects</p>
+          <h1 className="text-3xl font-semibold mb-1">AI Video Creator</h1>
+          <p className="text-muted-foreground">Generate engaging videos for social media</p>
         </div>
-        <div className="flex space-x-3">
-          <button 
-            onClick={() => setIsCreatingProject(true)}
-            className="flex items-center space-x-2 px-4 py-2 rounded-md bg-secondary text-foreground hover:bg-secondary/80 transition-colors"
-          >
-            <Plus size={18} />
-            <span>New Project</span>
-          </button>
-          <button 
-            onClick={() => setIsUploadDialogOpen(true)}
-            className="flex items-center space-x-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Upload size={18} />
-            <span>Upload Content</span>
-          </button>
-        </div>
+        <Button 
+          onClick={() => setIsCreateDialogOpen(true)}
+          className="flex items-center space-x-2"
+        >
+          <Plus size={18} />
+          <span>Create New Video</span>
+        </Button>
       </div>
 
-      <Tabs defaultValue="recent" className="w-full">
+      <Tabs defaultValue="videos" className="w-full">
         <TabsList className="mb-6">
-          <TabsTrigger value="recent">Recent Content</TabsTrigger>
-          <TabsTrigger value="projects">Projects</TabsTrigger>
+          <TabsTrigger value="videos">Your Videos</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="recent" className="space-y-6">
+        <TabsContent value="videos" className="space-y-6">
           {isLoading ? (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[...Array(3)].map((_, i) => (
@@ -279,9 +219,7 @@ const Dashboard: React.FC = () => {
               {userContent.map((content) => (
                 <Card key={content.id} className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
                   <div className="bg-secondary aspect-video flex items-center justify-center">
-                    {content.content_type === 'video' && <Video className="h-10 w-10 text-muted-foreground" />}
-                    {content.content_type === 'audio' && <i className="h-10 w-10 text-muted-foreground">🎵</i>}
-                    {content.content_type === 'text' && <i className="h-10 w-10 text-muted-foreground">📝</i>}
+                    <Video className="h-10 w-10 text-muted-foreground" />
                   </div>
                   <CardContent className="p-5">
                     <h3 className="font-medium mb-1">{content.title}</h3>
@@ -297,11 +235,8 @@ const Dashboard: React.FC = () => {
                         {content.status.charAt(0).toUpperCase() + content.status.slice(1)}
                       </span>
                       <div className="flex items-center">
-                        <span className="text-xs text-muted-foreground mr-2">
-                          {content.outputs?.length || 0} clips
-                        </span>
                         <Link to={`/editor?id=${content.id}`} className="text-primary text-sm flex items-center">
-                          View <ArrowRight className="ml-1 h-4 w-4" />
+                          Edit <ArrowRight className="ml-1 h-4 w-4" />
                         </Link>
                       </div>
                     </div>
@@ -314,50 +249,50 @@ const Dashboard: React.FC = () => {
               <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
                 <Video className="h-8 w-8 text-muted-foreground" />
               </div>
-              <h3 className="text-lg font-medium mb-2">No content yet</h3>
+              <h3 className="text-lg font-medium mb-2">No videos yet</h3>
               <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                Upload your first video, audio, or text content to start generating clips.
+                Create your first AI-generated video by clicking the button below.
               </p>
               <button 
-                onClick={() => setIsUploadDialogOpen(true)}
+                onClick={() => setIsCreateDialogOpen(true)}
                 className="inline-flex items-center space-x-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
               >
-                <Upload size={18} />
-                <span>Upload Content</span>
+                <Plus size={18} />
+                <span>Create New Video</span>
               </button>
             </div>
           )}
         </TabsContent>
         
-        <TabsContent value="projects" className="space-y-6">
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card 
-              onClick={() => setIsCreatingProject(true)}
-              className="border rounded-lg p-5 hover:shadow-md transition-shadow cursor-pointer flex flex-col items-center justify-center h-[172px]"
-            >
-              <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center mb-3">
-                <Plus className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <span className="text-muted-foreground">Create New Project</span>
-            </Card>
-          </div>
-        </TabsContent>
-        
         <TabsContent value="templates" className="space-y-6">
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-3 gap-6">
             {[
-              { name: "TikTok Highlights", icon: <Sparkles className="h-5 w-5 text-white" /> },
-              { name: "YouTube Shorts", icon: <Video className="h-5 w-5 text-white" /> },
-              { name: "Instagram Reels", icon: <Video className="h-5 w-5 text-white" /> }
+              { name: "TikTok Vertical", icon: <Video className="h-5 w-5 text-white" />, aspectRatio: "9:16" },
+              { name: "Instagram Reels", icon: <Video className="h-5 w-5 text-white" />, aspectRatio: "9:16" },
+              { name: "YouTube Shorts", icon: <Video className="h-5 w-5 text-white" />, aspectRatio: "9:16" },
+              { name: "Facebook Square", icon: <Video className="h-5 w-5 text-white" />, aspectRatio: "1:1" },
+              { name: "Facebook Landscape", icon: <Video className="h-5 w-5 text-white" />, aspectRatio: "16:9" },
+              { name: "Product Demo", icon: <Sparkles className="h-5 w-5 text-white" /> },
             ].map((template, i) => (
-              <Card key={i} className="border rounded-lg p-5 hover:shadow-md transition-shadow">
+              <Card 
+                key={i} 
+                className="border rounded-lg p-5 hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => {
+                  setIsCreateDialogOpen(true);
+                  if (template.aspectRatio) {
+                    setAspectRatio(template.aspectRatio as '9:16' | '1:1' | '16:9');
+                  }
+                }}
+              >
                 <div className="flex items-center mb-4">
                   <div className="w-10 h-10 rounded-md bg-primary flex items-center justify-center mr-3">
                     {template.icon}
                   </div>
                   <h3 className="font-medium">{template.name}</h3>
                 </div>
-                <p className="text-sm text-muted-foreground mb-4">Optimize your content for {template.name} with our AI templates.</p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Create optimized videos for {template.name} with our AI templates.
+                </p>
                 <button className="text-primary text-sm flex items-center">
                   Use Template <ArrowRight className="ml-1 h-4 w-4" />
                 </button>
@@ -367,190 +302,158 @@ const Dashboard: React.FC = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Upload Dialog */}
-      <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+      {/* Create Video Dialog */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent className="sm:max-w-[900px]">
           <DialogHeader>
-            <DialogTitle>Upload Content</DialogTitle>
+            <DialogTitle>Create AI Video</DialogTitle>
             <DialogDescription>
-              Upload your video, podcast, or article to start generating clips.
+              Generate an engaging video for social media by entering your script and selecting options.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleUpload} className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label htmlFor="title" className="block text-sm font-medium">
-                Title
-              </label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Enter content title"
-                required
-              />
+          
+          <form onSubmit={handleCreateVideo} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium mb-1 block">Video Title</label>
+                <Input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Enter a title for your video"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium mb-1 block">Video Script</label>
+                <Textarea 
+                  placeholder="Enter your video script here..."
+                  className="h-[200px]"
+                  value={scriptText}
+                  onChange={(e) => setScriptText(e.target.value)}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium mb-1 block">Platform</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'instagram', label: 'Instagram Reels' },
+                    { id: 'tiktok', label: 'TikTok' },
+                    { id: 'youtube', label: 'YouTube Shorts' },
+                    { id: 'facebook', label: 'Facebook' }
+                  ].map((p) => (
+                    <button
+                      type="button"
+                      key={p.id}
+                      className={`py-2 px-3 text-sm rounded-md border ${
+                        platform === p.id 
+                          ? 'bg-primary text-white border-primary' 
+                          : 'hover:bg-secondary transition-colors'
+                      }`}
+                      onClick={() => setPlatform(p.id as any)}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium mb-1 block">Aspect Ratio</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: '9:16', label: 'Vertical (9:16)' },
+                    { id: '1:1', label: 'Square (1:1)' },
+                    { id: '16:9', label: 'Landscape (16:9)' }
+                  ].map((option) => (
+                    <button
+                      type="button"
+                      key={option.id}
+                      className={`py-2 px-3 text-sm rounded-md border ${
+                        aspectRatio === option.id
+                          ? 'bg-primary text-white border-primary' 
+                          : 'hover:bg-secondary transition-colors'
+                      }`}
+                      onClick={() => setAspectRatio(option.id as any)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium mb-1 block">Effects</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'subtitles', label: 'Subtitles' },
+                    { id: 'avatar', label: 'AI Avatar' },
+                    { id: 'music', label: 'Background Music' },
+                    { id: 'animations', label: 'Text Animations' }
+                  ].map((effect) => (
+                    <button
+                      type="button"
+                      key={effect.id}
+                      className={`py-2 px-3 text-sm rounded-md border flex items-center justify-center ${
+                        selectedEffects.includes(effect.id)
+                          ? 'bg-primary text-white border-primary' 
+                          : 'hover:bg-secondary transition-colors'
+                      }`}
+                      onClick={() => handleEffectToggle(effect.id)}
+                    >
+                      {effect.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             
-            <div className="space-y-2">
-              <label htmlFor="contentType" className="block text-sm font-medium">
-                Content Type
-              </label>
-              <select
-                id="contentType"
-                value={contentType}
-                onChange={(e) => setContentType(e.target.value as 'video' | 'audio' | 'text')}
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-                required
+            <div className="space-y-4">
+              <div className="bg-gray-100 rounded-lg aspect-[9/16] relative overflow-hidden flex items-center justify-center">
+                {isGenerating ? (
+                  <div className="text-center">
+                    <Loader2 className="h-12 w-12 text-gray-400 animate-spin mx-auto" />
+                    <p className="mt-2 text-gray-500">Generating video...</p>
+                  </div>
+                ) : generatedVideo ? (
+                  <div className="absolute inset-0 bg-black">
+                    <img 
+                      src={generatedVideo.previewUrl} 
+                      alt="Video preview" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="text-center p-4">
+                    <Video className="h-12 w-12 mx-auto text-gray-400" />
+                    <p className="mt-2 text-gray-500">Video preview will appear here</p>
+                  </div>
+                )}
+              </div>
+              
+              <Button
+                type="submit"
+                disabled={isGenerating || !title || !scriptText}
+                className="w-full"
               >
-                <option value="video">Video</option>
-                <option value="audio">Audio</option>
-                <option value="text">Text</option>
-              </select>
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Generate Video
+                  </>
+                )}
+              </Button>
             </div>
-            
-            <div className="space-y-2">
-              <label htmlFor="sourceUrl" className="block text-sm font-medium">
-                Source URL
-              </label>
-              <Input
-                id="sourceUrl"
-                value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-                placeholder="Enter source URL (YouTube, Spotify, etc.)"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="contentText" className="block text-sm font-medium">
-                Content Text (for AI Analysis)
-              </label>
-              <Textarea
-                id="contentText"
-                value={contentText}
-                onChange={(e) => setContentText(e.target.value)}
-                placeholder="Enter transcript or content text for AI analysis"
-                rows={5}
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-              <p className="text-xs text-muted-foreground">
-                Optional: Paste transcript or content for AI analysis and clip suggestions
-              </p>
-            </div>
-            
-            <Button 
-              type="submit"
-              className="w-full"
-              disabled={isSubmitting || aiAnalysisLoading}
-            >
-              {isSubmitting || aiAnalysisLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 
-                  {aiAnalysisLoading ? "Analyzing with AI..." : "Processing..."}
-                </>
-              ) : (
-                'Upload & Analyze'
-              )}
-            </Button>
           </form>
         </DialogContent>
       </Dialog>
-
-      {/* New Project Dialog */}
-      <Dialog open={isCreatingProject} onOpenChange={setIsCreatingProject}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create New Project</DialogTitle>
-            <DialogDescription>
-              Organize your content into projects to keep things organized.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label htmlFor="project-name" className="text-sm font-medium">
-                Project Name
-              </label>
-              <Input
-                id="project-name"
-                type="text"
-                placeholder="My Awesome Project"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="project-description" className="text-sm font-medium">
-                Description (Optional)
-              </label>
-              <Textarea
-                id="project-description"
-                placeholder="What's this project about?"
-                rows={3}
-                value={projectDescription}
-                onChange={(e) => setProjectDescription(e.target.value)}
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-            </div>
-            <Button 
-              onClick={createNewProject}
-              className="w-full"
-            >
-              Create Project
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* AI Analysis Dialog */}
-      {aiAnalysisResult && (
-        <Dialog open={!!aiAnalysisResult} onOpenChange={() => setAiAnalysisResult(null)}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>AI Content Analysis</DialogTitle>
-              <DialogDescription>
-                Here's what our AI has found in your content.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="max-h-[500px] overflow-y-auto">
-              <h3 className="text-lg font-medium mb-2">Generated Clips</h3>
-              {aiAnalysisResult.suggestedClips && aiAnalysisResult.suggestedClips.length > 0 ? (
-                <div className="space-y-4">
-                  {aiAnalysisResult.suggestedClips.map((clip, index) => (
-                    <div key={index} className="border p-3 rounded-md">
-                      <h4 className="font-medium">{clip.title || `Clip ${index + 1}`}</h4>
-                      {clip.timestamp && <p className="text-xs text-primary">Timestamp: {clip.timestamp}</p>}
-                      <p className="text-sm mt-1">{clip.description}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p>No clip suggestions available. Try again with more content.</p>
-              )}
-              
-              <h3 className="text-lg font-medium mt-4 mb-2">Raw Analysis</h3>
-              <div className="prose prose-sm">
-                <div dangerouslySetInnerHTML={{ 
-                  __html: aiAnalysisResult.rawAnalysis.replace(/\n/g, '<br/>') 
-                }} />
-              </div>
-            </div>
-            <div className="flex justify-between mt-4">
-              <Button variant="outline" onClick={() => setAiAnalysisResult(null)}>
-                Close
-              </Button>
-              <Button onClick={() => {
-                setAiAnalysisResult(null);
-                toast({
-                  title: "Clips Generated",
-                  description: "Your clips have been saved and are ready to be edited.",
-                });
-              }}>
-                Continue to Editor
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 };
