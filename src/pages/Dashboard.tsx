@@ -98,56 +98,70 @@ const Dashboard: React.FC = () => {
           description: "Your content has been uploaded successfully.",
         });
         
-        // If content text was provided, analyze it with AI
-        if (contentText) {
-          setAiAnalysisLoading(true);
-          try {
-            console.log("Starting AI analysis of content...");
-            const analysisResult = await analyzeContentWithAI(contentText, contentType);
-            console.log("AI analysis complete:", analysisResult);
+        // Start AI analysis with source URL for videos
+        setAiAnalysisLoading(true);
+        try {
+          console.log("Starting AI analysis of content...");
+          
+          // Pass sourceUrl for video content analysis
+          const analysisResult = await analyzeContentWithAI(
+            contentText, 
+            contentType, 
+            contentType === 'video' ? sourceUrl : undefined
+          );
+          
+          console.log("AI analysis complete:", analysisResult);
+          
+          setAiAnalysisResult(analysisResult);
+          
+          // Process and save the suggested clips
+          if (analysisResult.suggestedClips && Array.isArray(analysisResult.suggestedClips)) {
+            setGeneratedClips(analysisResult.suggestedClips);
             
-            setAiAnalysisResult(analysisResult);
-            
-            // Process and save the suggested clips
-            if (analysisResult.suggestedClips && Array.isArray(analysisResult.suggestedClips)) {
-              setGeneratedClips(analysisResult.suggestedClips);
-              
-              // Mark the content as completed since we have clips
-              await updateContent(result.id, { status: 'completed' });
+            // Mark the content as completed since we have clips
+            await updateContent(result.id, { status: 'completed' });
 
-              // Create content outputs for each clip
-              for (const clip of analysisResult.suggestedClips) {
-                if (clip.title) {
-                  // Create a placeholder URL for now
-                  const outputData = {
-                    content_id: result.id,
-                    output_type: 'tiktok' as const, // Default to TikTok
-                    url: `https://example.com/clips/${result.id}/${encodeURIComponent(clip.title)}`
-                  };
-                  
-                  await createContentOutput(outputData);
-                }
+            // Create content outputs for each clip
+            for (const clip of analysisResult.suggestedClips) {
+              if (clip.title) {
+                const outputData = {
+                  content_id: result.id,
+                  output_type: 'tiktok' as const,
+                  url: `https://example.com/clips/${result.id}/${encodeURIComponent(clip.title)}`,
+                  title: clip.title,
+                  description: clip.description,
+                  timestamp: clip.timestamp,
+                  duration: clip.duration
+                };
+                
+                await createContentOutput(outputData);
               }
-              
-              // Refresh content list to show the new clips
-              const updatedContent = await getUserContent();
-              setUserContent(updatedContent);
             }
             
-            toast({
-              title: "AI Analysis Complete",
-              description: `Generated ${analysisResult.suggestedClips?.length || 0} clip suggestions for your content.`,
-            });
-          } catch (error) {
-            console.error('AI analysis error:', error);
-            toast({
-              title: "AI Analysis Error",
-              description: "Failed to analyze your content. Please try again.",
-              variant: "destructive",
-            });
-          } finally {
-            setAiAnalysisLoading(false);
+            // Refresh content list to show the new clips
+            const updatedContent = await getUserContent();
+            setUserContent(updatedContent);
+          } else {
+            // Update status to failed if no clips were generated
+            await updateContent(result.id, { status: 'failed' });
+            throw new Error("No clips could be generated");
           }
+          
+          toast({
+            title: "AI Analysis Complete",
+            description: `Generated ${analysisResult.suggestedClips?.length || 0} clip suggestions for your content.`,
+          });
+        } catch (error) {
+          console.error('AI analysis error:', error);
+          await updateContent(result.id, { status: 'failed' });
+          
+          toast({
+            title: "AI Analysis Error",
+            description: "Failed to analyze your content. Please try again.",
+            variant: "destructive",
+          });
+        } finally {
+          setAiAnalysisLoading(false);
         }
         
         // Refresh content list

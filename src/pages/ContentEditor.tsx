@@ -136,11 +136,24 @@ const ContentEditor: React.FC = () => {
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white rounded-lg border overflow-hidden">
               <div className="aspect-video bg-gray-100 relative">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-16 h-16 bg-black/70 rounded-full flex items-center justify-center cursor-pointer hover:bg-black/80 transition-colors">
-                    <Play className="h-6 w-6 text-white ml-1" />
+                {content.content_type === 'video' && (
+                  <iframe 
+                    className="absolute inset-0 w-full h-full"
+                    src={content.source_url.includes('youtube.com') 
+                      ? content.source_url.replace('/watch?v=', '/embed/') 
+                      : content.source_url}
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  ></iframe>
+                )}
+                {content.content_type !== 'video' && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-16 h-16 bg-black/70 rounded-full flex items-center justify-center cursor-pointer hover:bg-black/80 transition-colors">
+                      <Play className="h-6 w-6 text-white ml-1" />
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
               
               <div className="p-4 border-t">
@@ -187,12 +200,12 @@ const ContentEditor: React.FC = () => {
                             <Play className="h-5 w-5 text-white" />
                           </div>
                           <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
-                            0:15
+                            {clip.duration ? `${Math.floor(clip.duration)}s` : (clip.timestamp || '0:15')}
                           </div>
                         </div>
-                        <h3 className="text-sm font-medium truncate">Clip {index + 1}</h3>
-                        <p className="text-xs text-muted-foreground">
-                          Generated for {clip.output_type.charAt(0).toUpperCase() + clip.output_type.slice(1)}
+                        <h3 className="text-sm font-medium truncate">{clip.title || `Clip ${index + 1}`}</h3>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {clip.description || `Generated for ${clip.output_type.charAt(0).toUpperCase() + clip.output_type.slice(1)}`}
                         </p>
                       </div>
                     ))

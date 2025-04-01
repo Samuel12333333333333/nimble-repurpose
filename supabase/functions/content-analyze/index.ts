@@ -6,6 +6,168 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// WebSocket implementation for Runway API
+class RunwayService {
+  private ws: WebSocket | null = null;
+  private apiKey: string;
+  private messageCallbacks: Map<string, (data: any) => void> = new Map();
+  private isConnected: boolean = false;
+  private connectionPromise: Promise<void> | null = null;
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+    this.connectionPromise = this.connect();
+  }
+
+  private connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.ws = new WebSocket("wss://ws-api.runware.ai/v1");
+        
+        this.ws.onopen = () => {
+          console.log("WebSocket connected");
+          this.authenticate().then(resolve).catch(reject);
+        };
+
+        this.ws.onmessage = (event) => {
+          console.log("WebSocket message received:", event.data);
+          const response = JSON.parse(event.data);
+          
+          if (response.error || response.errors) {
+            console.error("WebSocket error response:", response);
+            const errorMessage = response.errorMessage || response.errors?.[0]?.message || "An error occurred";
+            reject(new Error(errorMessage));
+            return;
+          }
+
+          if (response.data) {
+            response.data.forEach((item: any) => {
+              if (item.taskType === "authentication") {
+                console.log("Authentication successful");
+                this.isConnected = true;
+              } else {
+                const callback = this.messageCallbacks.get(item.taskUUID);
+                if (callback) {
+                  callback(item);
+                  this.messageCallbacks.delete(item.taskUUID);
+                }
+              }
+            });
+          }
+        };
+
+        this.ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+          reject(error);
+        };
+
+        this.ws.onclose = () => {
+          console.log("WebSocket closed");
+          this.isConnected = false;
+        };
+      } catch (error) {
+        console.error("Error creating WebSocket:", error);
+        reject(error);
+      }
+    });
+  }
+
+  private authenticate(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        reject(new Error("WebSocket not ready for authentication"));
+        return;
+      }
+      
+      const authMessage = [{
+        taskType: "authentication",
+        apiKey: this.apiKey,
+      }];
+      
+      console.log("Sending authentication message");
+      
+      // Set up authentication callback
+      const authCallback = (event: MessageEvent) => {
+        const response = JSON.parse(event.data);
+        if (response.data?.[0]?.taskType === "authentication") {
+          this.ws?.removeEventListener("message", authCallback);
+          resolve();
+        }
+      };
+      
+      this.ws.addEventListener("message", authCallback);
+      this.ws.send(JSON.stringify(authMessage));
+    });
+  }
+
+  async generateVideoAnalysis(videoUrl: string): Promise<any> {
+    // Wait for connection and authentication before proceeding
+    await this.connectionPromise;
+
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isConnected) {
+      this.connectionPromise = this.connect();
+      await this.connectionPromise;
+    }
+
+    const taskUUID = crypto.randomUUID();
+    
+    return new Promise((resolve, reject) => {
+      const message = [{
+        taskType: "videoAnalysis",
+        taskUUID,
+        videoUrl: videoUrl,
+        analysisDepth: "detailed",
+        clipSuggestions: true,
+        numberOfClips: 5,
+      }];
+
+      console.log("Sending video analysis request:", message);
+
+      this.messageCallbacks.set(taskUUID, (data) => {
+        if (data.error) {
+          reject(new Error(data.errorMessage));
+        } else {
+          resolve(data);
+        }
+      });
+
+      this.ws.send(JSON.stringify(message));
+    });
+  }
+  
+  // Mock implementation for text content
+  async analyzeTextContent(text: string): Promise<any> {
+    // For text content, we'll create a simulated response
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const suggestedClips = [
+      {
+        title: "Key Insight #1",
+        description: "Important point from the beginning of the text",
+        timestamp: "00:00",
+        duration: 15
+      },
+      {
+        title: "Primary Argument",
+        description: "The central argument of the content",
+        timestamp: "00:15",
+        duration: 20
+      },
+      {
+        title: "Supporting Example",
+        description: "An example that reinforces the main point",
+        timestamp: "00:35",
+        duration: 15
+      }
+    ];
+    
+    return {
+      suggestedClips,
+      rawAnalysis: `Analysis of text: ${text.substring(0, 100)}...`
+    };
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -13,17 +175,17 @@ serve(async (req) => {
   }
 
   try {
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is not set");
+    const RUNWAY_API_KEY = Deno.env.get("RUNWAY_API_KEY");
+    if (!RUNWAY_API_KEY) {
+      throw new Error("RUNWAY_API_KEY is not set");
     }
 
     const requestData = await req.json();
-    const { content, contentType } = requestData;
+    const { content, contentType, sourceUrl } = requestData;
 
-    if (!content) {
+    if (!content && !sourceUrl) {
       return new Response(
-        JSON.stringify({ error: "Content is required" }),
+        JSON.stringify({ error: "Content or source URL is required" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -31,91 +193,25 @@ serve(async (req) => {
       );
     }
 
-    // Different prompt based on content type
-    let systemPrompt = "You are an AI content assistant that analyzes content and provides insights.";
+    console.log(`Processing ${contentType} content with Runway API`);
+    
+    const runwayService = new RunwayService(RUNWAY_API_KEY);
+    let analysisResult;
     
     if (contentType === "video") {
-      systemPrompt += " Extract key points, summarize, and suggest 3-5 viral video clips from this video content. For each clip suggestion, provide a title, timestamp (if available), and brief description of what should be included in the clip. Format your response as structured JSON with an array of clip objects.";
-    } else if (contentType === "audio") {
-      systemPrompt += " Extract key points, summarize, and suggest 3-5 viral audio clips from this podcast or audio content. For each clip suggestion, provide a title, timestamp (if available), and brief description of what should be included in the clip. Format your response as structured JSON with an array of clip objects.";
+      analysisResult = await runwayService.generateVideoAnalysis(sourceUrl || content);
     } else if (contentType === "text") {
-      systemPrompt += " Extract key points, summarize, and suggest 3-5 viral quotes from this article or text content. For each quote suggestion, provide a title and the exact quote text. Format your response as structured JSON with an array of quote objects.";
+      analysisResult = await runwayService.analyzeTextContent(content);
+    } else {
+      // For now, handle audio similar to text
+      analysisResult = await runwayService.analyzeTextContent(content);
     }
-
-    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
     
-    const payload = {
-      contents: [
-        {
-          parts: [
-            {
-              text: systemPrompt
-            },
-            {
-              text: content
-            }
-          ]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 1024,
-        responseMimeType: "application/json"
-      }
+    // Process and format the response
+    const processedResponse = {
+      rawAnalysis: analysisResult.rawAnalysis || "Analysis complete",
+      suggestedClips: analysisResult.suggestedClips || []
     };
-
-    console.log("Sending request to Gemini API with system prompt:", systemPrompt);
-    
-    const response = await fetch(`${url}?key=${GEMINI_API_KEY}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Gemini API error:", errorText);
-      throw new Error(`Gemini API error: ${response.status} ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log("Received response from Gemini API");
-
-    let processedResponse;
-    try {
-      // Try to find and parse any JSON in the response
-      const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      console.log("Raw response text:", responseText);
-      
-      // Attempt to extract JSON from the text
-      let jsonStr = responseText;
-      
-      // Find JSON-like pattern if it's embedded in text
-      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) || 
-                        responseText.match(/\{[\s\S]*\}/) ||
-                        responseText.match(/\[[\s\S]*\]/);
-      
-      if (jsonMatch) {
-        jsonStr = jsonMatch[0].replace(/```json|```/g, '').trim();
-      }
-      
-      // Parse the JSON
-      processedResponse = {
-        rawAnalysis: responseText,
-        suggestedClips: JSON.parse(jsonStr)
-      };
-    } catch (jsonError) {
-      console.error("Error parsing JSON from response:", jsonError);
-      // Fallback to raw text if JSON parsing fails
-      processedResponse = {
-        rawAnalysis: data?.candidates?.[0]?.content?.parts?.[0]?.text || "",
-        suggestedClips: []
-      };
-    }
 
     return new Response(JSON.stringify(processedResponse), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

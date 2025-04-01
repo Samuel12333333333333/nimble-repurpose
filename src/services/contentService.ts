@@ -10,6 +10,7 @@ export type Content = {
   status: 'processing' | 'completed' | 'failed';
   user_id: string;
   outputs: ContentOutput[];
+  transcript?: string;
 };
 
 export type ContentOutput = {
@@ -18,6 +19,10 @@ export type ContentOutput = {
   output_type: 'tiktok' | 'instagram' | 'twitter' | 'newsletter';
   url: string;
   created_at: string;
+  title?: string;
+  description?: string;
+  timestamp?: string;
+  duration?: number;
 };
 
 export type SuggestedClip = {
@@ -151,12 +156,12 @@ export async function deleteContent(id: string) {
   }
 }
 
-export async function analyzeContentWithAI(content: string, contentType: 'video' | 'audio' | 'text'): Promise<AIAnalysisResult> {
+export async function analyzeContentWithAI(content: string, contentType: 'video' | 'audio' | 'text', sourceUrl?: string): Promise<AIAnalysisResult> {
   try {
-    console.log(`Analyzing ${contentType} content with AI:`, content.substring(0, 100) + '...');
+    console.log(`Analyzing ${contentType} content with AI:`, content ? content.substring(0, 100) + '...' : 'Using source URL');
     
     const response = await supabase.functions.invoke('content-analyze', {
-      body: { content, contentType }
+      body: { content, contentType, sourceUrl }
     });
 
     if (response.error) {

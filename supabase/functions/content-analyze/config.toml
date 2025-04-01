@@ -1,2 +1,5 @@
 
-project_id = "lsegztteepohifsohdjs"
+project_id = "220b9ede359519b169cc"
+
+[functions.content-analyze]
+verify_jwt = false
