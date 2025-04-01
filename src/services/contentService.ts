@@ -57,6 +57,7 @@ export async function getUserContent() {
       .order('created_at', { ascending: false });
 
     if (error) {
+      console.error('Error fetching user content:', error);
       throw error;
     }
 
@@ -76,13 +77,14 @@ export async function getContentById(id: string) {
         outputs:content_outputs(*)
       `)
       .eq('id', id)
-      .single();
+      .maybeSingle();  // Use maybeSingle instead of single to prevent errors when no data is found
 
     if (error) {
+      console.error('Error fetching content by ID:', error);
       throw error;
     }
 
-    return data as Content;
+    return data as Content | null;
   } catch (error) {
     console.error('Error fetching content by ID:', error);
     return null;
@@ -95,9 +97,10 @@ export async function createContent(contentData: Omit<Content, 'id' | 'created_a
       .from('content')
       .insert(contentData)
       .select()
-      .single();
+      .maybeSingle(); // Use maybeSingle instead of single
 
     if (error) {
+      console.error('Error creating content:', error);
       throw error;
     }
 
@@ -114,9 +117,10 @@ export async function createContentOutput(outputData: Omit<ContentOutput, 'id' |
       .from('content_outputs')
       .insert(outputData)
       .select()
-      .single();
+      .maybeSingle(); // Use maybeSingle instead of single
 
     if (error) {
+      console.error('Error creating content output:', error);
       throw error;
     }
 
@@ -129,14 +133,18 @@ export async function createContentOutput(outputData: Omit<ContentOutput, 'id' |
 
 export async function updateContent(id: string, contentData: Partial<Content>) {
   try {
+    // Ensure we're not accidentally sending the outputs array which would cause errors
+    const { outputs, ...dataToUpdate } = contentData as any;
+    
     const { data, error } = await supabase
       .from('content')
-      .update(contentData)
+      .update(dataToUpdate)
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle(); // Use maybeSingle instead of single
 
     if (error) {
+      console.error('Error updating content:', error);
       throw error;
     }
 
@@ -155,6 +163,7 @@ export async function deleteContent(id: string) {
       .eq('id', id);
 
     if (error) {
+      console.error('Error deleting content:', error);
       throw error;
     }
 
